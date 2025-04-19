@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: unsubscribe-server
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python unsubscribe.py"
+    plan: free
+    envVars:
+      - key: PORT
+        value: 5001
