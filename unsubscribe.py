@@ -28,6 +28,10 @@ if not os.path.exists(CSV_FILE):
 # Flask setup
 app = Flask(__name__)
 
+@app.route("/")
+def home():
+    return "✅ Unsubscribe server is running.", 200
+
 @app.route("/unsubscribe")
 def unsubscribe():
     email = request.args.get("email")
@@ -51,9 +55,8 @@ def unsubscribe():
         </html>
     """)
 
-# Email report function (with CSV attachment)
 def send_unsubscribe_report():
-    since = datetime.utcnow() - timedelta(days=1)
+    since = datetime.utcnow() - timedelta(hours=12)
     unsubscribed = []
 
     with open(CSV_FILE, "r") as file:
@@ -70,26 +73,25 @@ def send_unsubscribe_report():
                 continue
 
     if not unsubscribed:
-        print("No unsubscribes in the last 24 hours.")
+        print("📭 No unsubscribes in the last 12 hours.")
         return
 
-    # Create a temporary CSV file for the report
+    # Create report file
     with open(ATTACHMENT_FILE, "w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(["email", "timestamp"])
         writer.writerows(unsubscribed)
 
     # Email body text
-    body = "Here is the unsubscribe report for the last 24 hours. The attached CSV contains the unsubscribed emails."
+    body = "Here is the unsubscribe report for the last 12 hours. The attached CSV contains the unsubscribed emails."
 
-    # Create a multipart email message
+    # Email setup
     msg = MIMEMultipart()
-    msg["Subject"] = "Daily Unsubscribe Report"
+    msg["Subject"] = "Unsubscribe Report - Last 12 Hours"
     msg["From"] = SENDER_EMAIL
     msg["To"] = REPORT_EMAIL
     msg.attach(MIMEText(body, "plain"))
 
-    # Attach the CSV file
     with open(ATTACHMENT_FILE, "rb") as attachment:
         part = MIMEBase("application", "octet-stream")
         part.set_payload(attachment.read())
@@ -97,44 +99,33 @@ def send_unsubscribe_report():
         part.add_header("Content-Disposition", f"attachment; filename={ATTACHMENT_FILE}")
         msg.attach(part)
 
-    # Send the email
     try:
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.sendmail(SENDER_EMAIL, REPORT_EMAIL, msg.as_string())
-        print("✅ Unsubscribe report with attachment sent.")
+        print("📧 Unsubscribe report sent with attachment.")
     except Exception as e:
         print(f"❌ Failed to send report: {e}")
 
-    # Remove the temporary CSV file
     try:
         os.remove(ATTACHMENT_FILE)
     except FileNotFoundError:
         print(f"❌ Attachment file not found: {ATTACHMENT_FILE}")
 
-# Background thread to run daily at 9:00 AM IST
-def start_daily_report_thread():
+# Run the report every 12 hours
+def start_12hr_report_thread():
     def loop():
-        IST_OFFSET = timedelta(hours=5, minutes=30)  # IST is UTC+5:30
         while True:
-            now_utc = datetime.utcnow()
-            now_ist = now_utc + IST_OFFSET
-            next_run_ist = now_ist.replace(hour=9, minute=0, second=0, microsecond=0)
-
-            if now_ist >= next_run_ist:
-                next_run_ist += timedelta(days=1)
-
-            sleep_seconds = (next_run_ist - now_ist).total_seconds()
-            print(f"⏰ Next unsubscribe report scheduled in {int(sleep_seconds)} seconds (9:00 AM IST)")
-            time.sleep(sleep_seconds)
+            print("⏳ Waiting 12 hours for next report...")
+            time.sleep(12 * 60 * 60)  # 12 hours
             send_unsubscribe_report()
     Thread(target=loop, daemon=True).start()
 
-# Start thread for the 24-hour interval report
-start_daily_report_thread()
+# Start the reporting thread
+start_12hr_report_thread()
 
-# Route to manually trigger the unsubscribe report
+# Manual trigger
 @app.route('/send_report')
 def send_report():
     send_unsubscribe_report()
@@ -143,4 +134,4 @@ def send_report():
 # Start Flask app
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)
