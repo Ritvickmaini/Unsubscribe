@@ -3,7 +3,7 @@ services:
     name: unsubscribe-server
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python unsubscribe.py"
+    startCommand: "gunicorn -b 0.0.0.0:$PORT unsubscribe:app"
     plan: free
     envVars:
       - key: PORT
