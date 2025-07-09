@@ -11,7 +11,7 @@ from threading import Thread
 import time
 
 # SMTP Configuration
-REPORT_EMAIL = "b2bgrowthexpo@gmail.com"
+REPORT_EMAILS = ["b2bgrowthexpo@gmail.com", "miltonkeynesexpo@gmail.com"]
 SMTP_SERVER = "mail.miltonkeynesexpo.com"
 SMTP_PORT = 587
 SENDER_EMAIL = "mike@miltonkeynesexpo.com"
@@ -89,7 +89,7 @@ def send_unsubscribe_report():
     msg = MIMEMultipart()
     msg["Subject"] = "Unsubscribe Report - Last 12 Hours"
     msg["From"] = SENDER_EMAIL
-    msg["To"] = REPORT_EMAIL
+    msg["To"] = ", ".join(REPORT_EMAILS)
     msg.attach(MIMEText(body, "plain"))
 
     with open(ATTACHMENT_FILE, "rb") as attachment:
@@ -103,7 +103,7 @@ def send_unsubscribe_report():
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.sendmail(SENDER_EMAIL, REPORT_EMAIL, msg.as_string())
+            server.sendmail(SENDER_EMAIL, REPORT_EMAILS, msg.as_string())
         print("📧 Unsubscribe report sent with attachment.")
     except Exception as e:
         print(f"❌ Failed to send report: {e}")
