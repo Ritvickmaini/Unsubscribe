@@ -17,10 +17,10 @@ REPORT_EMAILS = [
     "miltonkeynesexpo@gmail.com"
 ]
 
-SMTP_SERVER = "mail.miltonkeynesexpo.com"
+SMTP_SERVER = "mail.southamptonbusinessexpo.com"
 SMTP_PORT = 587
-SENDER_EMAIL = "mike@miltonkeynesexpo.com"
-SENDER_PASSWORD = "dvnn-&-((jdK"
+SENDER_EMAIL = "mike@southamptonbusinessexpo.com"
+SENDER_PASSWORD = "bi,dEd4qir.p"
 
 CSV_FILE = "unsubscribes.csv"
 ATTACHMENT_FILE = "unsubscribed_emails_report.csv"
@@ -82,8 +82,53 @@ def unsubscribe():
 
     if any(r[0] == email for r in rows):
         return render_template_string("""
-        <h2>Already unsubscribed</h2>
-        """)
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Already Unsubscribed</title>
+</head>
+<body style="
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #f7f7f7;
+    margin: 0;
+    padding: 0;
+">
+    <div style="
+        max-width: 600px;
+        margin: 80px auto;
+        background: #ffffff;
+        padding: 40px;
+        text-align: center;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    ">
+        <h2 style="
+            color: #3498DB;
+            margin-bottom: 20px;
+        ">
+            You’re already unsubscribed
+        </h2>
+
+        <p style="
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 10px;
+        ">
+            Our records show that this email address<br>
+            has already been unsubscribed.
+        </p>
+
+        <p style="
+            color: #555;
+            font-size: 15px;
+            line-height: 1.6;
+        ">
+            You won’t receive any further emails from us.
+        </p>
+    </div>
+</body>
+</html>
+""")
 
     with csv_lock:
         with open(CSV_FILE, "a", newline="") as f:
