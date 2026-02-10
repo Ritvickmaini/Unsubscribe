@@ -14,7 +14,9 @@ from threading import Lock
 # ===================== CONFIG =====================
 REPORT_EMAILS = [
     "b2bgrowthexpo@gmail.com",
-    "miltonkeynesexpo@gmail.com"
+    "miltonkeynesexpo@gmail.com",
+    "santosh@b2bgrowthhub.com",
+    "geeconglobal@gmail.com"
 ]
 
 SMTP_SERVER = "mail.southamptonbusinessexpo.com"
