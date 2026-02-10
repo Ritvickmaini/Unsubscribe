@@ -7,57 +7,66 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from threading import Thread
-import time
 import urllib.parse
 import re
+from threading import Lock
 
-# ===================== SMTP Configuration =====================
-REPORT_EMAILS = ["b2bgrowthexpo@gmail.com", "miltonkeynesexpo@gmail.com"]
+# ===================== CONFIG =====================
+REPORT_EMAILS = [
+    "b2bgrowthexpo@gmail.com",
+    "miltonkeynesexpo@gmail.com"
+]
+
 SMTP_SERVER = "mail.miltonkeynesexpo.com"
 SMTP_PORT = 587
 SENDER_EMAIL = "mike@miltonkeynesexpo.com"
 SENDER_PASSWORD = "dvnn-&-((jdK"
+
 CSV_FILE = "unsubscribes.csv"
 ATTACHMENT_FILE = "unsubscribed_emails_report.csv"
 
-# ===================== Ensure CSV Exists =====================
+# ===================== INIT =====================
+app = Flask(__name__)
+csv_lock = Lock()
+
+EMAIL_PATTERN = re.compile(
+    r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+)
+
+# Ensure CSV exists
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["email", "timestamp"])
 
-# ===================== Flask App Setup =====================
-app = Flask(__name__)
-
-EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
-
-# --------------------- Helper Functions ---------------------
+# ===================== HELPERS =====================
 def clean_email(raw_email: str) -> str | None:
-    """Decode and validate email address."""
     if not raw_email:
         return None
     email = urllib.parse.unquote_plus(raw_email).strip().lower()
-    if EMAIL_PATTERN.match(email):
-        return email
-    return None
+    return email if EMAIL_PATTERN.match(email) else None
+
 
 def read_unsubscribes():
-    with open(CSV_FILE, newline="") as f:
-        reader = csv.reader(f)
-        next(reader, None)
-        return [row for row in reader if len(row) == 2]
+    with csv_lock:
+        with open(CSV_FILE, newline="") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            return [row for row in reader if len(row) == 2]
+
 
 def write_unsubscribes(rows):
-    with open(CSV_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["email", "timestamp"])
-        writer.writerows(rows)
+    with csv_lock:
+        with open(CSV_FILE, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["email", "timestamp"])
+            writer.writerows(rows)
 
-# --------------------- Flask Routes ---------------------
+# ===================== ROUTES =====================
 @app.route("/")
 def home():
     return "✅ Unsubscribe server running.", 200
+
 
 @app.route("/unsubscribe")
 def unsubscribe():
@@ -66,73 +75,122 @@ def unsubscribe():
 
     if not email:
         return render_template_string("""
-        <html><body style="font-family:Arial;text-align:center;padding:50px;">
-        <h2 style="color:#E74C3C;">Invalid Unsubscribe Request</h2>
-        <p>We could not process your request because the email address was invalid.</p>
-        </body></html>
+        <h2 style="color:red;">Invalid unsubscribe request</h2>
         """), 400
 
-    # avoid duplicates
-    existing = read_unsubscribes()
-    if any(row[0] == email for row in existing):
-        return render_template_string(f"""
-        <html><body style="font-family:Arial;text-align:center;padding:50px;">
-        <h2 style="color:#3498DB;">Already Unsubscribed</h2>
-        <p><strong>{email}</strong> is already unsubscribed.</p>
-        </body></html>
+    rows = read_unsubscribes()
+
+    if any(r[0] == email for r in rows):
+        return render_template_string("""
+        <h2>Already unsubscribed</h2>
         """)
 
-    # save new unsubscribe
-    with open(CSV_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([email, datetime.utcnow().isoformat()])
+    with csv_lock:
+        with open(CSV_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([email, datetime.utcnow().isoformat()])
 
     return render_template_string(f"""
-        <html><head><title>Unsubscribed</title></head>
-        <body style="font-family: Arial; text-align:center; padding:50px;">
-            <h2 style="color:#E74C3C;">You’ve been unsubscribed</h2>
-            <p style="font-size:18px;">We're sorry to see you go, <strong>{email}</strong>.</p>
-            <p style="color:#555;">You will no longer receive our emails.</p>
-        </body></html>
-    """)
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Unsubscribed</title>
+</head>
+<body style="
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #f7f7f7;
+    margin: 0;
+    padding: 0;
+">
+    <div style="
+        max-width: 600px;
+        margin: 80px auto;
+        background: #ffffff;
+        padding: 40px;
+        text-align: center;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    ">
+        <h2 style="
+            color: #E74C3C;
+            margin-bottom: 20px;
+        ">
+            You’ve been unsubscribed
+        </h2>
+
+        <p style="
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 10px;
+        ">
+            We're sorry to see you go,
+            <strong>{email}</strong>.
+        </p>
+
+        <p style="
+            color: #555;
+            font-size: 15px;
+            line-height: 1.6;
+        ">
+            You will no longer receive our emails.<br>
+            If this was a mistake, you’re always welcome back.
+        </p>
+    </div>
+</body>
+</html>
+""")
+
+
 
 @app.route("/get_unsubscribes")
 def get_unsubscribes():
-    """API endpoint for campaign script to pull unsubscribed emails."""
-    unsubscribes = [row[0] for row in read_unsubscribes()]
-    return jsonify({"unsubscribed": unsubscribes, "count": len(unsubscribes)})
+    emails = [r[0] for r in read_unsubscribes()]
+    return jsonify({
+        "count": len(emails),
+        "unsubscribed": emails
+    })
 
-# --------------------- Reporting & Cleanup ---------------------
+# ===================== REPORT LOGIC =====================
 def send_unsubscribe_report():
-    since = datetime.utcnow() - timedelta(hours=12)
-    unsubscribed = [r for r in read_unsubscribes()
-                    if datetime.fromisoformat(r[1]) > since]
+    now = datetime.utcnow()
+    since = now - timedelta(hours=2)
 
-    if not unsubscribed:
-        print("📭 No unsubscribes in the last 12 hours.")
+    all_rows = read_unsubscribes()
+
+    to_report = [
+        r for r in all_rows
+        if since <= datetime.fromisoformat(r[1]) <= now
+    ]
+
+    if not to_report:
+        print("📭 No unsubscribes in last 2 hours")
         return
 
-    # Write report file
+    # Write CSV attachment
     with open(ATTACHMENT_FILE, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["email", "timestamp"])
-        writer.writerows(unsubscribed)
+        writer.writerows(to_report)
 
     # Build email
     msg = MIMEMultipart()
-    msg["Subject"] = "Unsubscribe Report - Last 12 Hours"
+    msg["Subject"] = f"Unsubscribe Report – Last 2 Hours ({len(to_report)})"
     msg["From"] = SENDER_EMAIL
     msg["To"] = ", ".join(REPORT_EMAILS)
-    body = ("Here is the unsubscribe report for the last 12 hours.\n"
-            "The attached CSV contains the unsubscribed emails.")
-    msg.attach(MIMEText(body, "plain"))
 
-    with open(ATTACHMENT_FILE, "rb") as att:
+    msg.attach(MIMEText(
+        f"Attached unsubscribe report.\n\nTotal: {len(to_report)}",
+        "plain"
+    ))
+
+    with open(ATTACHMENT_FILE, "rb") as f:
         part = MIMEBase("application", "octet-stream")
-        part.set_payload(att.read())
+        part.set_payload(f.read())
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition",
-                        f"attachment; filename={ATTACHMENT_FILE}")
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename={ATTACHMENT_FILE}"
+        )
         msg.attach(part)
 
     try:
@@ -140,46 +198,27 @@ def send_unsubscribe_report():
             s.starttls()
             s.login(SENDER_EMAIL, SENDER_PASSWORD)
             s.sendmail(SENDER_EMAIL, REPORT_EMAILS, msg.as_string())
-        print("📧 Unsubscribe report emailed successfully.")
+
+        print(f"📧 Report sent ({len(to_report)} unsubscribes)")
+
+        # DELETE only reported rows
+        remaining = [r for r in all_rows if r not in to_report]
+        write_unsubscribes(remaining)
+
     except Exception as e:
-        print(f"❌ Failed to send report: {e}")
+        print(f"❌ Report failed: {e}")
 
-    os.remove(ATTACHMENT_FILE) if os.path.exists(ATTACHMENT_FILE) else None
+    finally:
+        if os.path.exists(ATTACHMENT_FILE):
+            os.remove(ATTACHMENT_FILE)
 
-    # After sending, delete those unsubscribed > 12 hours old
-    all_rows = read_unsubscribes()
-    recent = [r for r in all_rows if datetime.fromisoformat(r[1]) > since]
-    write_unsubscribes(recent)
-    print("🧹 Cleaned old unsubscribes after sending report.")
-
-# --------------------- Background Threads ---------------------
-def periodic_tasks():
-    """Run hourly cleanup and 12-hour report automatically."""
-    last_report = datetime.utcnow()
-    while True:
-        time.sleep(3600)  # every hour
-        # cleanup entries older than 48 hours (safety)
-        rows = read_unsubscribes()
-        fresh = [r for r in rows
-                 if datetime.fromisoformat(r[1]) > datetime.utcnow() - timedelta(hours=48)]
-        if len(fresh) != len(rows):
-            write_unsubscribes(fresh)
-            print("🧹 Removed unsubscribes older than 48 hours.")
-
-        # send report every 12 hours
-        if datetime.utcnow() - last_report >= timedelta(hours=12):
-            send_unsubscribe_report()
-            last_report = datetime.utcnow()
-
-Thread(target=periodic_tasks, daemon=True).start()
-
-# --------------------- Manual Trigger ---------------------
+# ===================== MANUAL / CRON =====================
 @app.route("/send_report")
 def send_report():
     send_unsubscribe_report()
     return "✅ Unsubscribe report sent."
 
-# --------------------- Start Server ---------------------
+# ===================== START =====================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
