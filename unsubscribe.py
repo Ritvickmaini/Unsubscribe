@@ -202,65 +202,75 @@ def get_unsubscribes():
 # ===================== REPORT LOGIC =====================
 def send_unsubscribe_report():
     now = datetime.utcnow()
-    since = now - timedelta(hours=2)
+    report_since = now - timedelta(hours=2)
+    cleanup_before = now - timedelta(hours=12)
 
     all_rows = read_unsubscribes()
 
-    to_report = [
-        r for r in all_rows
-        if since <= datetime.fromisoformat(r[1]) <= now
-    ]
+    to_report = []
+    remaining_rows = []
+
+    for r in all_rows:
+        try:
+            ts = datetime.fromisoformat(r[1])
+        except:
+            continue
+
+        # Report last 2 hours
+        if report_since <= ts <= now:
+            to_report.append(r)
+
+        # Keep only last 12 hours
+        if ts >= cleanup_before:
+            remaining_rows.append(r)
 
     if not to_report:
         print("📭 No unsubscribes in last 2 hours")
-        return
+    else:
+        # Write CSV attachment
+        with open(ATTACHMENT_FILE, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["email", "timestamp"])
+            writer.writerows(to_report)
 
-    # Write CSV attachment
-    with open(ATTACHMENT_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["email", "timestamp"])
-        writer.writerows(to_report)
+        msg = MIMEMultipart()
+        msg["Subject"] = f"Unsubscribe Report – Last 2 Hours ({len(to_report)})"
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = ", ".join(REPORT_EMAILS)
 
-    # Build email
-    msg = MIMEMultipart()
-    msg["Subject"] = f"Unsubscribe Report – Last 2 Hours ({len(to_report)})"
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = ", ".join(REPORT_EMAILS)
+        msg.attach(MIMEText(
+            f"Attached unsubscribe report.\n\nTotal: {len(to_report)}",
+            "plain"
+        ))
 
-    msg.attach(MIMEText(
-        f"Attached unsubscribe report.\n\nTotal: {len(to_report)}",
-        "plain"
-    ))
+        with open(ATTACHMENT_FILE, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header(
+                "Content-Disposition",
+                f"attachment; filename={ATTACHMENT_FILE}"
+            )
+            msg.attach(part)
 
-    with open(ATTACHMENT_FILE, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header(
-            "Content-Disposition",
-            f"attachment; filename={ATTACHMENT_FILE}"
-        )
-        msg.attach(part)
+        try:
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
+                s.starttls()
+                s.login(SENDER_EMAIL, SENDER_PASSWORD)
+                s.sendmail(SENDER_EMAIL, REPORT_EMAILS, msg.as_string())
 
-    try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
-            s.starttls()
-            s.login(SENDER_EMAIL, SENDER_PASSWORD)
-            s.sendmail(SENDER_EMAIL, REPORT_EMAILS, msg.as_string())
+            print(f"📧 Report sent ({len(to_report)} unsubscribes)")
 
-        print(f"📧 Report sent ({len(to_report)} unsubscribes)")
+        except Exception as e:
+            print(f"❌ Report failed: {e}")
 
-        # DELETE only reported rows
-        remaining = [r for r in all_rows if r not in to_report]
-        write_unsubscribes(remaining)
+        finally:
+            if os.path.exists(ATTACHMENT_FILE):
+                os.remove(ATTACHMENT_FILE)
 
-    except Exception as e:
-        print(f"❌ Report failed: {e}")
-
-    finally:
-        if os.path.exists(ATTACHMENT_FILE):
-            os.remove(ATTACHMENT_FILE)
-
+    # 🔥 Cleanup older than 12 hours
+    write_unsubscribes(remaining_rows)
+    print(f"🧹 Cleaned old unsubscribes. Stored: {len(remaining_rows)}")
 # ===================== MANUAL / CRON =====================
 def auto_report_worker():
     print("🚀 Auto report worker started...")
