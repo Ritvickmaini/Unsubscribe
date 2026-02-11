@@ -10,6 +10,8 @@ from email import encoders
 import urllib.parse
 import re
 from threading import Lock
+import threading
+import time
 
 # ===================== CONFIG =====================
 REPORT_EMAILS = [
@@ -260,12 +262,20 @@ def send_unsubscribe_report():
             os.remove(ATTACHMENT_FILE)
 
 # ===================== MANUAL / CRON =====================
-@app.route("/send_report")
-def send_report():
-    send_unsubscribe_report()
-    return "✅ Unsubscribe report sent."
+def auto_report_worker():
+    print("🚀 Auto report worker started...")
+    time.sleep(7200)  # wait 2 hours first
+    while True:
+        try:
+            send_unsubscribe_report()
+        except Exception as e:
+            print(f"❌ Auto report error: {e}")
+        
+        time.sleep(7200)  # 2 hours (7200 seconds)
 
 # ===================== START =====================
 if __name__ == "__main__":
+    # Start background auto-report thread
+    threading.Thread(target=auto_report_worker, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
