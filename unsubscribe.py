@@ -378,6 +378,14 @@ def get_unsubscribes():
         "unsubscribed": emails
     })
 
+@app.route("/send_report_now")
+def send_report_now():
+    try:
+        send_unsubscribe_report()
+        return "✅ Report triggered successfully.", 200
+    except Exception as e:
+        return f"❌ Failed to send report: {e}", 500
+
 # ===================== REPORT LOGIC =====================
 def send_unsubscribe_report():
     now = datetime.utcnow()
