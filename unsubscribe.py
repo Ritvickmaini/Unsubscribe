@@ -2,6 +2,7 @@ import os
 import csv
 from datetime import datetime, timedelta
 from flask import Flask, request, render_template_string, jsonify
+from flask import send_file
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -386,16 +387,26 @@ def send_report_now():
     except Exception as e:
         return f"❌ Failed to send report: {e}", 500
 
+@app.route("/download_unsubscribes")
+def download_unsubscribes():
+    if not os.path.exists(CSV_FILE):
+        return "No unsubscribe file found.", 404
+
+    return send_file(
+        CSV_FILE,
+        as_attachment=True,
+        download_name="unsubscribes.csv",
+        mimetype="text/csv"
+    )
+
 # ===================== REPORT LOGIC =====================
 def send_unsubscribe_report():
     now = datetime.utcnow()
     report_since = now - timedelta(hours=2)
-    cleanup_before = now - timedelta(hours=12)
 
     all_rows = read_unsubscribes()
 
     to_report = []
-    remaining_rows = []
 
     for r in all_rows:
         try:
@@ -403,61 +414,49 @@ def send_unsubscribe_report():
         except:
             continue
 
-        # Report last 2 hours
+        # Only check for reporting window
         if report_since <= ts <= now:
             to_report.append(r)
 
-        # Keep only last 12 hours
-        if ts >= cleanup_before:
-            remaining_rows.append(r)
-
     if not to_report:
         print("📭 No unsubscribes in last 2 hours")
-    else:
-        # Write CSV attachment
-        with open(ATTACHMENT_FILE, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["email", "timestamp"])
-            writer.writerows(to_report)
+        return
 
-        msg = MIMEMultipart()
-        msg["Subject"] = f"Unsubscribe Report – Last 2 Hours ({len(to_report)})"
-        msg["From"] = SENDER_EMAIL
-        msg["To"] = ", ".join(REPORT_EMAILS)
+    # Write CSV attachment
+    with open(ATTACHMENT_FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["email", "timestamp"])
+        writer.writerows(to_report)
 
-        msg.attach(MIMEText(
-            f"Attached unsubscribe report.\n\nTotal: {len(to_report)}",
-            "plain"
-        ))
+    msg = MIMEMultipart()
+    msg["Subject"] = f"Unsubscribe Report – Last 2 Hours ({len(to_report)})"
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = ", ".join(REPORT_EMAILS)
 
-        with open(ATTACHMENT_FILE, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-            encoders.encode_base64(part)
-            part.add_header(
-                "Content-Disposition",
-                f"attachment; filename={ATTACHMENT_FILE}"
-            )
-            msg.attach(part)
+    msg.attach(MIMEText(
+        f"Attached unsubscribe report.\n\nTotal: {len(to_report)}",
+        "plain"
+    ))
 
-        try:
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
-                s.starttls()
-                s.login(SENDER_EMAIL, SENDER_PASSWORD)
-                s.sendmail(SENDER_EMAIL, REPORT_EMAILS, msg.as_string())
+    with open(ATTACHMENT_FILE, "rb") as f:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename={ATTACHMENT_FILE}"
+        )
+        msg.attach(part)
 
-            print(f"📧 Report sent ({len(to_report)} unsubscribes)")
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
+        s.starttls()
+        s.login(SENDER_EMAIL, SENDER_PASSWORD)
+        s.sendmail(SENDER_EMAIL, REPORT_EMAILS, msg.as_string())
 
-        except Exception as e:
-            print(f"❌ Report failed: {e}")
+    print(f"📧 Report sent ({len(to_report)} unsubscribes)")
 
-        finally:
-            if os.path.exists(ATTACHMENT_FILE):
-                os.remove(ATTACHMENT_FILE)
-
-    # 🔥 Cleanup older than 12 hours
-    write_unsubscribes(remaining_rows)
-    print(f"🧹 Cleaned old unsubscribes. Stored: {len(remaining_rows)}")
+    if os.path.exists(ATTACHMENT_FILE):
+        os.remove(ATTACHMENT_FILE)
 # ===================== MANUAL / CRON =====================
 def auto_report_worker():
     print("🚀 Auto report worker started...")
